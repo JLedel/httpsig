@@ -229,6 +229,54 @@ func (r *rsaAlgorithm) String() string {
 	return fmt.Sprintf("%s-%s", rsaPrefix, hashToDef[r.kind].name)
 }
 
+var _ signer = &kmsAlgorithm{}
+
+type kmsAlgorithm struct {
+	hash.Hash
+	kind crypto.Hash
+}
+
+func (r *kmsAlgorithm) setSig(b []byte) error {
+	n, err := r.Write(b)
+	if err != nil {
+		r.Reset()
+		return err
+	} else if n != len(b) {
+		r.Reset()
+		return fmt.Errorf("could only write %d of %d bytes of signature to hash", n, len(b))
+	}
+	return nil
+}
+
+func (r *kmsAlgorithm) Sign(rand io.Reader, p crypto.PrivateKey, sig []byte) ([]byte, error) {
+	defer r.Reset()
+
+	if err := r.setSig(sig); err != nil {
+		return nil, err
+	}
+	pKey, ok := p.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("crypto.PrivateKey is not crypto.Signer")
+	}
+	return pKey.Sign(rand, sig, r.kind)
+}
+
+func (r *kmsAlgorithm) Verify(pub crypto.PublicKey, toHash, signature []byte) error {
+	defer r.Reset()
+	rsaK, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return errors.New("crypto.PublicKey is not *rsa.PublicKey")
+	}
+	if err := r.setSig(toHash); err != nil {
+		return err
+	}
+	return rsa.VerifyPKCS1v15(rsaK, r.kind, r.Sum(nil), signature)
+}
+
+func (r *kmsAlgorithm) String() string {
+	return fmt.Sprintf("%s-%s", rsaPrefix, hashToDef[r.kind].name)
+}
+
 var _ signer = &ed25519Algorithm{}
 
 type ed25519Algorithm struct {
@@ -456,7 +504,7 @@ func signerFromSSHSigner(sshSigner ssh.Signer, s string) (signer, error) {
 }
 
 // signerFromString is an internally public method constructor
-func signerFromString(s string) (signer, error) {
+func signerFromString(s string, kmsSigner bool) (signer, error) {
 	s = strings.ToLower(s)
 	isEcdsa := false
 	isEd25519 := false
@@ -475,6 +523,12 @@ func signerFromString(s string) (signer, error) {
 	hash, cHash, err := newAlgorithm(algo, nil)
 	if err != nil {
 		return nil, err
+	}
+	if kmsSigner {
+		return &kmsAlgorithm{
+			Hash: hash,
+			kind: cHash,
+		}, nil
 	}
 	if isEd25519 {
 		return &ed25519Algorithm{}, nil

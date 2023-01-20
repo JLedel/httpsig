@@ -162,15 +162,15 @@ type Signer interface {
 //
 // An error is returned if an unknown or a known cryptographically insecure
 // Algorithm is provided.
-func NewSigner(prefs []Algorithm, dAlgo DigestAlgorithm, headers []string, scheme SignatureScheme, expiresIn int64) (Signer, Algorithm, error) {
+func NewSigner(prefs []Algorithm, dAlgo DigestAlgorithm, headers []string, scheme SignatureScheme, expiresIn int64, kms bool) (Signer, Algorithm, error) {
 	for _, pref := range prefs {
-		s, err := newSigner(pref, dAlgo, headers, scheme, expiresIn)
+		s, err := newSigner(pref, dAlgo, headers, scheme, expiresIn, kms)
 		if err != nil {
 			continue
 		}
 		return s, pref, err
 	}
-	s, err := newSigner(defaultAlgorithm, dAlgo, headers, scheme, expiresIn)
+	s, err := newSigner(defaultAlgorithm, dAlgo, headers, scheme, expiresIn, kms)
 	return s, defaultAlgorithm, err
 }
 
@@ -323,7 +323,7 @@ func newSSHSigner(sshSigner ssh.Signer, algo Algorithm, dAlgo DigestAlgorithm, h
 	return a, nil
 }
 
-func newSigner(algo Algorithm, dAlgo DigestAlgorithm, headers []string, scheme SignatureScheme, expiresIn int64) (Signer, error) {
+func newSigner(algo Algorithm, dAlgo DigestAlgorithm, headers []string, scheme SignatureScheme, expiresIn int64, kms bool) (Signer, error) {
 
 	var expires, created int64 = 0, 0
 	if expiresIn != 0 {
@@ -331,7 +331,7 @@ func newSigner(algo Algorithm, dAlgo DigestAlgorithm, headers []string, scheme S
 		expires = created + expiresIn
 	}
 
-	s, err := signerFromString(string(algo))
+	s, err := signerFromString(string(algo), kms)
 	if err == nil {
 		a := &asymmSigner{
 			s:            s,
@@ -344,6 +344,7 @@ func newSigner(algo Algorithm, dAlgo DigestAlgorithm, headers []string, scheme S
 		}
 		return a, nil
 	}
+	// TODO: Do we need KMS here? Probably, but let's wait and find out
 	m, err := macerFromString(string(algo))
 	if err != nil {
 		return nil, fmt.Errorf("no crypto implementation available for %q: %s", algo, err)
