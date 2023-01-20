@@ -62,7 +62,7 @@ func (v *verifier) KeyId() string {
 }
 
 func (v *verifier) Verify(pKey crypto.PublicKey, algo Algorithm) error {
-	s, err := signerFromString(string(algo))
+	s, err := signerFromString(string(algo), false)
 	if err == nil {
 		return v.asymmVerify(s, pKey)
 	}
